@@ -40,18 +40,79 @@ Production-ready plugin for collecting cross-chain bridge metrics from LayerZero
 
 ## Quick Start
 
+### Prerequisites
+
+- **Node.js**: v18 or higher
+- **Bun**: Latest version (or npm/yarn/pnpm)
+- **No API Keys Required**: All endpoints are publicly accessible
+
+### Installation
+
 ```bash
+# Clone the repository
+git clone https://github.com/himanshuranjan007/data-provider-playground-lz0.git
+cd data-provider-playground-lz0/packages/layerzero-plugin
+
 # Install dependencies
 bun install
+# or: npm install / yarn install / pnpm install
+```
 
-# Run tests
-bun test
+### Environment Configuration
 
-# Build
+Create a `.env` file in the plugin directory (optional - defaults work out of the box):
+
+```bash
+# Copy the example
+cp .env.example .env
+
+# Edit if needed (defaults are production-ready)
+```
+
+**Available Environment Variables**:
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `LZ_SCAN_BASE_URL` | LayerZero Scan API endpoint | `https://scan.layerzero-api.com/v1` | No |
+| `STARGATE_BASE_URL` | Stargate API endpoint | `https://stargate.finance/api/v1` | No |
+| `HTTP_TIMEOUT_MS` | Request timeout in milliseconds | `12000` (12s) | No |
+| `MAX_RETRIES` | Maximum retry attempts | `4` | No |
+| `RATE_LIMIT_RPS_LZ` | LayerZero Scan rate limit (requests/sec) | `3` | No |
+| `RATE_LIMIT_RPS_STG` | Stargate rate limit (requests/sec) | `3` | No |
+
+**Note**: No API keys are required. Both APIs are publicly accessible.
+
+### Running the Plugin
+
+```bash
+# Build the plugin
 bun run build
 
-# Development mode
+# Run all tests
+bun test
+
+# Run only fast unit tests (utilities)
+bun test src/__tests__/unit/retry.test.ts
+bun test src/__tests__/unit/rateLimit.test.ts
+bun test src/__tests__/unit/services.test.ts
+
+# Development mode with hot reload
 bun run dev
+
+# Type checking
+bun run typecheck
+```
+
+### Testing with Real APIs
+
+The plugin makes real API calls. Integration tests may take 20-30 seconds per route due to:
+- Binary search for liquidity (~48 API calls per route)
+- Rate limiting (3 requests per second)
+- Network latency
+
+```bash
+# Run with extended timeout for integration tests
+bun test --testTimeout=60000
 ```
 
 ## Official Documentation
@@ -209,34 +270,22 @@ bun run dev
 }
 ```
 
-## Environment Variables
+## Usage Example
 
-```bash
-# LayerZero Scan API
-LZ_SCAN_BASE_URL=https://scan.layerzero-api.com/v1
+### Testing with a Sample Route
 
-# Stargate API
-STARGATE_BASE_URL=https://stargate.finance/api/v1
-
-# HTTP Configuration
-HTTP_TIMEOUT_MS=12000
-MAX_RETRIES=4
-
-# Rate Limiting (requests per second)
-RATE_LIMIT_RPS_LZ=3
-RATE_LIMIT_RPS_STG=3
-```
-
-**Note**: No API keys required - both APIs are publicly accessible.
-
-## Testing
-
-### Quick Test Route
-
-Test with USDC Ethereum → Polygon:
+Test the plugin with USDC Ethereum → Polygon:
 
 ```typescript
-{
+import { DataProviderService } from './src/service';
+import { EnvSchema } from './src/env';
+
+// Initialize with default config
+const config = EnvSchema.parse({});
+const service = new DataProviderService(config);
+
+// Define test route
+const route = {
   source: {
     chainId: "1",
     assetId: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
@@ -249,23 +298,57 @@ Test with USDC Ethereum → Polygon:
     symbol: "USDC",
     decimals: 6
   }
-}
+};
+
+// Fetch snapshot
+const snapshot = await service.getSnapshot({
+  routes: [route],
+  notionals: ["1000000"], // 1 USDC
+  includeWindows: ["24h"]
+});
+
+console.log('Volume:', snapshot.volumes);
+console.log('Rates:', snapshot.rates);
+console.log('Liquidity:', snapshot.liquidity);
+console.log('Assets:', snapshot.listedAssets.assets.length);
 ```
 
-### Run Tests
+### Expected Output
 
-```bash
-# All tests
-bun test
-
-# Unit tests only
-bun run test
-
-# Integration tests
-bun run test:integration
-
-# Watch mode
-bun run test:watch
+```json
+{
+  "volumes": [
+    { "window": "24h", "volumeUsd": 1234567.89, "measuredAt": "2024-01-15T12:00:00Z" }
+  ],
+  "rates": [
+    {
+      "source": { "chainId": "1", "assetId": "0xa0b86...", "symbol": "USDC", "decimals": 6 },
+      "destination": { "chainId": "137", "assetId": "0x3c499...", "symbol": "USDC", "decimals": 6 },
+      "amountIn": "1000000",
+      "amountOut": "995000",
+      "effectiveRate": 0.995,
+      "totalFeesUsd": 0.005,
+      "quotedAt": "2024-01-15T12:00:00Z"
+    }
+  ],
+  "liquidity": [
+    {
+      "route": { "source": {...}, "destination": {...} },
+      "thresholds": [
+        { "maxAmountIn": "500000000000", "slippageBps": 50 },
+        { "maxAmountIn": "1000000000000", "slippageBps": 100 }
+      ],
+      "measuredAt": "2024-01-15T12:00:00Z"
+    }
+  ],
+  "listedAssets": {
+    "assets": [
+      { "chainId": "1", "assetId": "0xa0b86...", "symbol": "USDC", "decimals": 6 },
+      { "chainId": "137", "assetId": "0x3c499...", "symbol": "USDC", "decimals": 6 }
+    ],
+    "measuredAt": "2024-01-15T12:00:00Z"
+  }
+}
 ```
 
 ## Implementation Details
@@ -353,6 +436,69 @@ Stargate doesn't expose a direct liquidity depth API. Binary search on quotes:
 - Finds the exact threshold where slippage exceeds target
 - Requires ~24 API calls per threshold (logarithmic)
 - Gives accurate, real-time liquidity data
+
+## Troubleshooting
+
+### Common Issues
+
+#### Tests Timing Out
+
+**Symptom**: Tests fail with "Test timed out in 10000ms"
+
+**Solution**: Integration tests make real API calls and need more time:
+```bash
+bun test --testTimeout=60000
+```
+
+Or update `vitest.config.ts`:
+```typescript
+export default defineConfig({
+  test: {
+    testTimeout: 60000, // 60 seconds
+  },
+});
+```
+
+#### Rate Limit Errors (429)
+
+**Symptom**: "Rate limited" or 429 errors
+
+**Solution**: Adjust rate limits in `.env`:
+```bash
+RATE_LIMIT_RPS_LZ=2  # Reduce from 3
+RATE_LIMIT_RPS_STG=2  # Reduce from 3
+```
+
+#### Connection Timeouts
+
+**Symptom**: "Request timeout" errors
+
+**Solution**: Increase timeout in `.env`:
+```bash
+HTTP_TIMEOUT_MS=20000  # Increase to 20 seconds
+```
+
+#### Invalid Route Errors
+
+**Symptom**: "No quotes available" or 400 errors
+
+**Solution**: Verify the route is supported by Stargate:
+- Check chain IDs match Stargate's supported chains
+- Verify token addresses are correct for each chain
+- Use the `/tokens` and `/chains` endpoints to see available options
+
+### Verifying API Access
+
+Test LayerZero Scan API:
+```bash
+curl "https://scan.layerzero-api.com/v1/messages/latest?limit=1"
+```
+
+Test Stargate API:
+```bash
+curl "https://stargate.finance/api/v1/chains"
+curl "https://stargate.finance/api/v1/tokens"
+```
 
 ## Test Results
 
