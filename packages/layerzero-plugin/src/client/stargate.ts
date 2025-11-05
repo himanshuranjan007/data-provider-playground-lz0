@@ -13,14 +13,14 @@ export const QuoteSchema = z.object({
   dstAmountMin: z.string(),
   duration: z.object({
     estimated: z.number(),
-  }),
+  }).optional(),
   fees: z.array(
     z.object({
-      name: z.string(),
+      name: z.string().optional(),
       amount: z.string(),
       token: z.string().optional(),
     })
-  ),
+  ).optional().default([]),
 });
 
 export type Quote = z.infer<typeof QuoteSchema>;

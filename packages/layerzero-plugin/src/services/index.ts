@@ -83,7 +83,10 @@ export function calculateTotalFees(
 ): number {
   let totalFeeInSrcUnits = 0n;
 
-  for (const fee of quote.fees) {
+  // Handle optional fees array
+  const fees = quote.fees || [];
+  
+  for (const fee of fees) {
     try {
       totalFeeInSrcUnits += BigInt(fee.amount);
     } catch (error) {

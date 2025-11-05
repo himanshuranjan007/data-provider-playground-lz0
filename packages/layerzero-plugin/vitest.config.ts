@@ -9,7 +9,8 @@ export default defineConfig({
       "src/__tests__/integration/**/*.test.ts"
     ],
     exclude: ["node_modules", "dist"],
-    testTimeout: 10000,
+    // Increased timeout for real API calls (liquidity binary search takes ~20-30s)
+    testTimeout: 60000,
   },
   resolve: {
     alias: {

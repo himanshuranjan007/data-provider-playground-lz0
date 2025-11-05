@@ -1,64 +1,66 @@
 import type { PluginRegistry } from "every-plugin";
 import { createLocalPluginRuntime } from "every-plugin/testing";
 import { beforeAll, describe, expect, it } from "vitest";
-import DataProviderTemplatePlugin from "../../index";
+import LayerZeroPlugin from "../../index";
 
-// Mock route for testing
+// Test route: USDC Ethereum → Polygon
 const mockRoute = {
   source: {
     chainId: "1",
-    assetId: "0xA0b86a33E6442e082877a094f204b01BF645Fe0",
+    assetId: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
     symbol: "USDC",
     decimals: 6,
   },
   destination: {
     chainId: "137",
-    assetId: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa8417",
+    assetId: "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
     symbol: "USDC",
     decimals: 6,
   }
 };
 
 const TEST_REGISTRY: PluginRegistry = {
-  "@every-plugin/template": {
+  "@every-plugin/layerzero": {
     remoteUrl: "http://localhost:3000/remoteEntry.js",
     version: "1.0.0",
-    description: "Data provider template for integration testing",
+    description: "LayerZero/Stargate data provider for integration testing",
   },
 };
 
 const TEST_PLUGIN_MAP = {
-  "@every-plugin/template": DataProviderTemplatePlugin,
+  "@every-plugin/layerzero": LayerZeroPlugin,
 } as const;
 
 const TEST_CONFIG = {
   variables: {
-    baseUrl: "https://api.example.com",
-    timeout: 5000,
+    LZ_SCAN_BASE_URL: "https://scan.layerzero-api.com/v1",
+    STARGATE_BASE_URL: "https://stargate.finance/api/v1",
+    HTTP_TIMEOUT_MS: 10000,
+    MAX_RETRIES: 2,
+    RATE_LIMIT_RPS_LZ: 10,
+    RATE_LIMIT_RPS_STG: 10,
   },
-  secrets: {
-    apiKey: "test-api-key",
-  },
+  secrets: {},
 };
 
-describe("Data Provider Plugin Integration Tests", () => {
+describe("LayerZero Plugin Integration Tests", () => {
   const runtime = createLocalPluginRuntime<typeof TEST_PLUGIN_MAP>(
     {
       registry: TEST_REGISTRY,
-      secrets: { API_KEY: "test-api-key" },
+      secrets: {},
     },
     TEST_PLUGIN_MAP
   );
 
   beforeAll(async () => {
-    const { initialized } = await runtime.usePlugin("@every-plugin/template", TEST_CONFIG);
+    const { initialized } = await runtime.usePlugin("@every-plugin/layerzero", TEST_CONFIG);
     expect(initialized).toBeDefined();
-    expect(initialized.plugin.id).toBe("@every-plugin/template");
+    expect(initialized.plugin.id).toBe("@every-plugin/layerzero");
   });
 
   describe("getSnapshot procedure", () => {
     it("should fetch complete snapshot successfully", async () => {
-      const { client } = await runtime.usePlugin("@every-plugin/template", TEST_CONFIG);
+      const { client } = await runtime.usePlugin("@every-plugin/layerzero", TEST_CONFIG);
 
       const result = await client.getSnapshot({
         routes: [mockRoute],
@@ -84,7 +86,7 @@ describe("Data Provider Plugin Integration Tests", () => {
     });
 
     it("should return volumes for requested time windows", async () => {
-      const { client } = await runtime.usePlugin("@every-plugin/template", TEST_CONFIG);
+      const { client } = await runtime.usePlugin("@every-plugin/layerzero", TEST_CONFIG);
 
       const result = await client.getSnapshot({
         routes: [mockRoute],
@@ -100,7 +102,7 @@ describe("Data Provider Plugin Integration Tests", () => {
     });
 
     it("should generate rates for all route/notional combinations", async () => {
-      const { client } = await runtime.usePlugin("@every-plugin/template", TEST_CONFIG);
+      const { client } = await runtime.usePlugin("@every-plugin/layerzero", TEST_CONFIG);
 
       const result = await client.getSnapshot({
         routes: [mockRoute],
@@ -124,7 +126,7 @@ describe("Data Provider Plugin Integration Tests", () => {
     });
 
     it("should provide liquidity at required thresholds", async () => {
-      const { client } = await runtime.usePlugin("@every-plugin/template", TEST_CONFIG);
+      const { client } = await runtime.usePlugin("@every-plugin/layerzero", TEST_CONFIG);
 
       const result = await client.getSnapshot({
         routes: [mockRoute],
@@ -151,7 +153,7 @@ describe("Data Provider Plugin Integration Tests", () => {
     });
 
     it("should return list of supported assets", async () => {
-      const { client } = await runtime.usePlugin("@every-plugin/template", TEST_CONFIG);
+      const { client } = await runtime.usePlugin("@every-plugin/layerzero", TEST_CONFIG);
 
       const result = await client.getSnapshot({
         routes: [mockRoute],
@@ -173,7 +175,7 @@ describe("Data Provider Plugin Integration Tests", () => {
     });
 
     it("should handle multiple routes correctly", async () => {
-      const { client } = await runtime.usePlugin("@every-plugin/template", TEST_CONFIG);
+      const { client } = await runtime.usePlugin("@every-plugin/layerzero", TEST_CONFIG);
 
       const secondRoute = {
         source: {
@@ -202,7 +204,7 @@ describe("Data Provider Plugin Integration Tests", () => {
     });
 
     it("should require routes and notionals", async () => {
-      const { client } = await runtime.usePlugin("@every-plugin/template", TEST_CONFIG);
+      const { client } = await runtime.usePlugin("@every-plugin/layerzero", TEST_CONFIG);
 
       // Should throw validation error for empty routes
       await expect(
@@ -224,7 +226,7 @@ describe("Data Provider Plugin Integration Tests", () => {
 
   describe("ping procedure", () => {
     it("should return healthy status", async () => {
-      const { client } = await runtime.usePlugin("@every-plugin/template", TEST_CONFIG);
+      const { client } = await runtime.usePlugin("@every-plugin/layerzero", TEST_CONFIG);
 
       const result = await client.ping();
 
