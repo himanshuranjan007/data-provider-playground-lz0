@@ -118,26 +118,18 @@ export class DataProviderService {
         const start = now - windowMs[window];
         const end = now;
 
-        try {
-          const volumeData = await computeVolume(this.lzScanClient, { start, end });
-          
-          // Convert raw native units to USD estimate
-          // For now, use a rough estimate - in production, fetch actual prices
-          const volumeUsd = Number(volumeData.raw) / 1e18 * 2000; // Assume ~$2000 per ETH
+        const volumeData = await computeVolume(this.lzScanClient, { start, end });
+        
+        // Convert raw native units to USD estimate
+        // Note: source.tx.value represents native gas fees, not transfer amounts
+        // This is a limitation of the LayerZero Scan API
+        const volumeUsd = Number(volumeData.raw) / 1e18 * 2000; // Assume ~$2000 per ETH
 
-          return {
-            window,
-            volumeUsd,
-            measuredAt: new Date().toISOString(),
-          };
-        } catch (error) {
-          console.error(`Failed to fetch volume for ${window}:`, error);
-          return {
-            window,
-            volumeUsd: 0,
-            measuredAt: new Date().toISOString(),
-          };
-        }
+        return {
+          window,
+          volumeUsd,
+          measuredAt: new Date().toISOString(),
+        };
       })
     );
 
@@ -155,49 +147,44 @@ export class DataProviderService {
 
     for (const route of routes) {
       for (const notional of notionals) {
-        try {
-          // Map chainId to chainKey (simplified - in production, use proper mapping)
-          const srcChainKey = this.getChainKey(route.source.chainId);
-          const dstChainKey = this.getChainKey(route.destination.chainId);
+        // Map chainId to chainKey (simplified - in production, use proper mapping)
+        const srcChainKey = this.getChainKey(route.source.chainId);
+        const dstChainKey = this.getChainKey(route.destination.chainId);
 
-          const quote = await this.stargateClient.getQuote({
-            srcToken: route.source.assetId,
-            dstToken: route.destination.assetId,
-            srcChainKey,
-            dstChainKey,
-            srcAddress: dummyAddress,
-            dstAddress: dummyAddress,
-            srcAmount: notional,
-            dstAmountMin: "0",
-          });
+        const quote = await this.stargateClient.getQuote({
+          srcToken: route.source.assetId,
+          dstToken: route.destination.assetId,
+          srcChainKey,
+          dstChainKey,
+          srcAddress: dummyAddress,
+          dstAddress: dummyAddress,
+          srcAmount: notional,
+          dstAmountMin: "0",
+        });
 
-          const effectiveRate = calculateEffectiveRate(
-            quote.srcAmount,
-            quote.dstAmount,
-            route.source.decimals,
-            route.destination.decimals
-          );
+        const effectiveRate = calculateEffectiveRate(
+          quote.srcAmount,
+          quote.dstAmount,
+          route.source.decimals,
+          route.destination.decimals
+        );
 
-          const totalFeesUsd = calculateTotalFees(
-            quote,
-            quote.srcAmount,
-            route.source.decimals,
-            1.0 // Assume stablecoin
-          );
+        const totalFeesUsd = calculateTotalFees(
+          quote,
+          quote.srcAmount,
+          route.source.decimals,
+          1.0 // Assume stablecoin
+        );
 
-          rates.push({
-            source: route.source,
-            destination: route.destination,
-            amountIn: quote.srcAmount,
-            amountOut: quote.dstAmount,
-            effectiveRate,
-            totalFeesUsd,
-            quotedAt: new Date().toISOString(),
-          });
-        } catch (error) {
-          console.error(`Failed to fetch rate for route:`, error);
-          // Continue with other routes
-        }
+        rates.push({
+          source: route.source,
+          destination: route.destination,
+          amountIn: quote.srcAmount,
+          amountOut: quote.dstAmount,
+          effectiveRate,
+          totalFeesUsd,
+          quotedAt: new Date().toISOString(),
+        });
       }
     }
 
@@ -213,54 +200,49 @@ export class DataProviderService {
     const dummyAddress = "0x0000000000000000000000000000000000000001";
 
     for (const route of routes) {
-      try {
-        const srcChainKey = this.getChainKey(route.source.chainId);
-        const dstChainKey = this.getChainKey(route.destination.chainId);
+      const srcChainKey = this.getChainKey(route.source.chainId);
+      const dstChainKey = this.getChainKey(route.destination.chainId);
 
-        // Find max amounts at both thresholds in parallel
-        const [threshold50, threshold100] = await Promise.all([
-          findMaxAmountAtSlippage(this.stargateClient, {
-            srcToken: route.source.assetId,
-            dstToken: route.destination.assetId,
-            srcChainKey,
-            dstChainKey,
-            srcAddress: dummyAddress,
-            dstAddress: dummyAddress,
-            srcDecimals: route.source.decimals,
-            dstDecimals: route.destination.decimals,
-            targetBps: 50,
-          }),
-          findMaxAmountAtSlippage(this.stargateClient, {
-            srcToken: route.source.assetId,
-            dstToken: route.destination.assetId,
-            srcChainKey,
-            dstChainKey,
-            srcAddress: dummyAddress,
-            dstAddress: dummyAddress,
-            srcDecimals: route.source.decimals,
-            dstDecimals: route.destination.decimals,
-            targetBps: 100,
-          }),
-        ]);
+      // Find max amounts at both thresholds in parallel
+      const [threshold50, threshold100] = await Promise.all([
+        findMaxAmountAtSlippage(this.stargateClient, {
+          srcToken: route.source.assetId,
+          dstToken: route.destination.assetId,
+          srcChainKey,
+          dstChainKey,
+          srcAddress: dummyAddress,
+          dstAddress: dummyAddress,
+          srcDecimals: route.source.decimals,
+          dstDecimals: route.destination.decimals,
+          targetBps: 50,
+        }),
+        findMaxAmountAtSlippage(this.stargateClient, {
+          srcToken: route.source.assetId,
+          dstToken: route.destination.assetId,
+          srcChainKey,
+          dstChainKey,
+          srcAddress: dummyAddress,
+          dstAddress: dummyAddress,
+          srcDecimals: route.source.decimals,
+          dstDecimals: route.destination.decimals,
+          targetBps: 100,
+        }),
+      ]);
 
-        liquidity.push({
-          route,
-          thresholds: [
-            {
-              maxAmountIn: threshold50.maxSrcAmount,
-              slippageBps: 50,
-            },
-            {
-              maxAmountIn: threshold100.maxSrcAmount,
-              slippageBps: 100,
-            },
-          ],
-          measuredAt: new Date().toISOString(),
-        });
-      } catch (error) {
-        console.error(`Failed to fetch liquidity for route:`, error);
-        // Continue with other routes
-      }
+      liquidity.push({
+        route,
+        thresholds: [
+          {
+            maxAmountIn: threshold50.maxSrcAmount,
+            slippageBps: 50,
+          },
+          {
+            maxAmountIn: threshold100.maxSrcAmount,
+            slippageBps: 100,
+          },
+        ],
+        measuredAt: new Date().toISOString(),
+      });
     }
 
     return liquidity;
@@ -270,37 +252,28 @@ export class DataProviderService {
    * Fetch list of assets from Stargate API
    */
   private async getListedAssets(): Promise<ListedAssetsType> {
-    try {
-      const [tokens, chains] = await Promise.all([
-        this.stargateClient.getTokens(),
-        this.stargateClient.getChains(),
-      ]);
+    const [tokens, chains] = await Promise.all([
+      this.stargateClient.getTokens(),
+      this.stargateClient.getChains(),
+    ]);
 
-      // Create chain key to chain ID mapping
-      const chainKeyToId = new Map(
-        chains.map((chain) => [chain.chainKey, chain.chainId.toString()])
-      );
+    // Create chain key to chain ID mapping
+    const chainKeyToId = new Map(
+      chains.map((chain) => [chain.chainKey, chain.chainId.toString()])
+    );
 
-      // Convert Stargate tokens to Asset format
-      const assets: AssetType[] = tokens.map((token) => ({
-        chainId: chainKeyToId.get(token.chainKey) || token.chainKey,
-        assetId: token.address,
-        symbol: token.symbol,
-        decimals: token.decimals,
-      }));
+    // Convert Stargate tokens to Asset format
+    const assets: AssetType[] = tokens.map((token) => ({
+      chainId: chainKeyToId.get(token.chainKey) || token.chainKey,
+      assetId: token.address,
+      symbol: token.symbol,
+      decimals: token.decimals,
+    }));
 
-      return {
-        assets,
-        measuredAt: new Date().toISOString(),
-      };
-    } catch (error) {
-      console.error("Failed to fetch listed assets:", error);
-      // Return empty list on error
-      return {
-        assets: [],
-        measuredAt: new Date().toISOString(),
-      };
-    }
+    return {
+      assets,
+      measuredAt: new Date().toISOString(),
+    };
   }
 
   /**

@@ -54,20 +54,36 @@ bun run build
 bun run dev
 ```
 
+## Official Documentation
+
+### Protocol Documentation
+- **LayerZero Protocol**: https://docs.layerzero.network/
+- **Stargate Protocol**: https://stargateprotocol.gitbook.io/stargate/
+- **LayerZero Scan**: https://layerzeroscan.com/
+
+### API Documentation
+- **LayerZero Scan API**: https://scan.layerzero-api.com/v1
+  - Documentation: https://docs.layerzero.network/contracts/layerzero-scan
+- **Stargate API**: https://stargate.finance/api/v1
+  - Documentation: https://stargateprotocol.gitbook.io/stargate/developers/api
+
 ## API Endpoints Used
 
 ### 1. LayerZero Scan API
 
-**Base URL**: `https://scan.layerzero-api.com/v1`
+**Base URL**: `https://scan.layerzero-api.com/v1`  
+**Documentation**: https://docs.layerzero.network/contracts/layerzero-scan
 
 - **GET /messages/latest** - Fetch cross-chain messages with pagination
   - Query params: `start` (ISO datetime), `end` (ISO datetime), `limit`, `nextToken`
   - Returns: Message data including `source.tx.value` (native fee/value)
   - Used for: Volume aggregation across time windows
+  - **Note**: `source.tx.value` represents native gas fees, not transfer amounts
 
 ### 2. Stargate API
 
-**Base URL**: `https://stargate.finance/api/v1`
+**Base URL**: `https://stargate.finance/api/v1`  
+**Documentation**: https://stargateprotocol.gitbook.io/stargate/developers/api
 
 - **GET /quotes** - Get transfer quote for a route
   - Params: `srcToken`, `dstToken`, `srcChainKey`, `dstChainKey`, `srcAmount`, etc.
@@ -90,9 +106,19 @@ bun run dev
 
 **Method**: Sum `source.tx.value` across all messages in time window
 
+**Important Limitation**: 
+- `source.tx.value` represents **native gas fees**, NOT transfer amounts
+- This is a limitation of the LayerZero Scan API
+- Actual transfer amounts are embedded in message payloads (not easily parseable)
+
 **Normalization**: Raw values in native smallest units → USD estimate (ETH price × value / 1e18)
 
 **Time Windows**: 24h, 7d, 30d
+
+**Alternative Approaches** (if available):
+- Parse Stargate-specific message payloads for actual amounts
+- Use Stargate analytics/subgraph (if exists)
+- Filter messages by Stargate app ID
 
 ```typescript
 // Example output
@@ -136,6 +162,16 @@ bun run dev
 2. Binary search over amounts to find max size where slippage ≤ target
 3. Slippage = `(1 - currentRate / baseRate) × 10,000` basis points
 4. Find thresholds for 50bps (0.5%) and 100bps (1.0%)
+
+**Why Binary Search**:
+- Stargate doesn't expose a direct liquidity depth API
+- Binary search efficiently finds max amount (~24 iterations per threshold)
+- Quotes reflect actual pool liquidity and price impact
+
+**Limitations**:
+- Requires ~48 API calls per route (24 per threshold)
+- Rate-limited to 3 rps = ~16 seconds per route minimum
+- Assumes quote slippage accurately reflects pool depth
 
 **Output**: Max notional at each slippage threshold
 
